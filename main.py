@@ -21,13 +21,19 @@ def main():
     cv2.moveWindow('original image', 10, 10)
     cv2.moveWindow('cropped image', 250, 10)
 
-    all_face_vectors = load_all_face_vectors_from_disk(no_of_persons, samples_person)
+    all_image_numbers = []
+    for pers_no in range(no_of_persons):
+        for sample_no in range(samples_person):
+            all_image_numbers.append((pers_no, sample_no))
+    all_face_vectors = load_face_vectors_from_disk(all_image_numbers, image_size)
 
     while True:
         function = input(
             "0)Exit\n"
             "1)Test variating number of training samples\n"
             "2)Test variating number of principal components\n"
+            "3)Live test\n"
+            "4)Test image \"test.JPG\"\n"
             "\n"
             "Choose function:"
         )
@@ -35,6 +41,10 @@ def main():
             test_different_training(all_face_vectors, no_of_persons, samples_person)
         elif function == "2":
             test_different_number_of_PCs(all_face_vectors, no_of_persons, samples_person, 3)
+        elif function == "3":
+            test_live(all_face_vectors, all_image_numbers, samples_person)
+        elif function == "4":
+            test_one_image(all_face_vectors, all_image_numbers, samples_person)
         elif function == "0":
             return
 
@@ -78,6 +88,65 @@ def test_different_number_of_PCs(all_face_vectors, no_of_persons, samples_person
     # Plot results:
     plot_results(plot_number_of_PCs, plot_recognition_rate, 1, samples_person - 1)
 
+def test_live(all_face_vectors, all_image_numbers, samples_person):
+    # Load training faces:
+    train_faces = choose_face_vectors(all_face_vectors, all_image_numbers)
+    training_results = train(train_faces, None)
+
+    cap = cv2.VideoCapture(0)
+    while True:
+        success, frame = cap.read()
+        if not success:
+            continue  # Let's just try again
+        cv2.imshow('video', frame)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        try:
+            person_no, sample_no = test_one(training_results, frame, samples_person)
+        except UserWarning:
+            print("No face was found..")
+        else:
+            display_match(all_face_vectors, person_no, sample_no)
+
+        key_no = cv2.waitKey(30) & 0xFF
+        if key_no == ord('q'):
+            print("Quitting...")
+            break
+    cap.release()
+
+
+def test_one_image(all_face_vectors, all_image_numbers, samples_person):
+    # Load training faces:
+    train_faces = choose_face_vectors(all_face_vectors, all_image_numbers)
+    training_results = train(train_faces, None)
+
+    path = "./test.JPG"
+    print("Loading \"{}\" ...".format(path))
+    image = cv2.imread(filename=path, flags=0)
+    person_no, sample_no = test_one(training_results, image, samples_person)
+    display_match(all_face_vectors, person_no, sample_no)
+    cv2.waitKey(20)
+
+
+def test_one(training_results, image, samples_person):
+    train_average_face, eig_vectors, train_weights = training_results
+    face_vector = load_face_vector(image, image_size)
+    # Hacky way to reuse code:
+    test_face = choose_face_vectors({"1": face_vector, "2": face_vector})
+    test_diff = test_face - train_average_face
+    test_weights = numpy.dot(eig_vectors, test_diff.T).T
+    closest_target_no, closest_distance = test_distance(test_weights[0], train_weights)
+    calculated_class = closest_target_no // samples_person
+    print("Class:{}".format(calculated_class))
+    person_no = closest_target_no // samples_person
+    sample_no = closest_target_no % samples_person
+    return person_no, sample_no
+
+def display_match(all_face_vectors, person_no, sample_no):
+    match = all_face_vectors[(person_no, sample_no)].copy()
+    match.shape = image_size
+    cv2.imshow('MATCH', match)
+
 
 def plot_results(x_axis, y_axis, x_min, x_max):
     # Plot datapoints
@@ -86,12 +155,8 @@ def plot_results(x_axis, y_axis, x_min, x_max):
 
     #Plot mean
     plot_mean_y = []
-    print(x_axis)
-    print(y_axis)
     for group_no in range(x_max - x_min + 1):
-        print(group_no)
         group = y_axis[group_no::x_max - x_min + 1]
-        print(group)
         mean = sum(group) / len(group)
         plot_mean_y.append(mean)
     ax.plot(x_axis[:x_max - x_min + 1], plot_mean_y, label='Mean', linestyle='--')
@@ -101,12 +166,7 @@ def plot_results(x_axis, y_axis, x_min, x_max):
     plt.show()
 
 
-def train_and_test(all_face_vectors, no_of_persons, samples_person, samples_training, principal_components=None):
-    train_img_no, test_img_no = randomly_assign_images(no_of_persons, samples_person, samples_training)
-
-    # Load training faces:
-    train_faces = choose_face_vectors(all_face_vectors, train_img_no)
-
+def train(train_faces, principal_components=None):
     #Calculate the average face
     train_average_face = train_faces.mean(axis=0)
     #Calculate Eigenvectors
@@ -126,6 +186,16 @@ def train_and_test(all_face_vectors, no_of_persons, samples_person, samples_trai
 
     #Calculate weights for each image
     train_weights = numpy.dot(eig_vectors, T.T).T
+
+    return train_average_face, eig_vectors, train_weights
+
+
+def train_and_test(all_face_vectors, no_of_persons, samples_person, samples_training, principal_components=None):
+    train_img_no, test_img_no = randomly_assign_images(no_of_persons, samples_person, samples_training)
+    # Load training faces:
+    train_faces = choose_face_vectors(all_face_vectors, train_img_no)
+
+    train_average_face, eig_vectors, train_weights = train(train_faces, principal_components)
 
     #Load images for testing
     test_faces = choose_face_vectors(all_face_vectors, test_img_no)
@@ -149,13 +219,22 @@ def train_and_test(all_face_vectors, no_of_persons, samples_person, samples_trai
     return successes / tries
 
 
-def choose_face_vectors(all_face_vectors, image_numbers):
+def choose_face_vectors(all_face_vectors, image_numbers=None):
+    if image_numbers is None:
+        no_of_vectors = len(all_face_vectors)
+    else:
+        no_of_vectors = len(image_numbers)
+
     chosen_face_vectors = numpy.zeros(
-        shape=(len(image_numbers), image_size[0] * image_size[1]),
+        shape=(no_of_vectors, image_size[0] * image_size[1]),
         dtype=numpy.float64
     )
-    for count, number in enumerate(image_numbers):
-        chosen_face_vectors[count] = all_face_vectors[number]
+    if image_numbers is None:
+        for count, face_vector in enumerate(all_face_vectors.values()):
+            chosen_face_vectors[count] = face_vector
+    else:
+        for count, number in enumerate(image_numbers):
+            chosen_face_vectors[count] = all_face_vectors[number]
     return chosen_face_vectors
 
 
@@ -181,15 +260,6 @@ def randomly_assign_images(no_of_persons, samples_person, samples_training):
     return training_image_numbers, testing_image_numbers
 
 
-def load_all_face_vectors_from_disk(no_of_persons, samples_person):
-    all_image_numbers = []
-    for pers_no in range(no_of_persons):
-        for sample_no in range(samples_person):
-            all_image_numbers.append((pers_no, sample_no))
-    all_face_vectors = load_face_vectors_from_disk(all_image_numbers, image_size)
-    return all_face_vectors
-
-
 def load_face_vectors_from_disk(image_numbers, image_size):
     """
     Loads face vectors from disk and places them in the dictionary
@@ -201,10 +271,10 @@ def load_face_vectors_from_disk(image_numbers, image_size):
     face_vectors = {}
     for count, nums in enumerate(image_numbers):
         person_no, sample_no = nums
-        face_vector = load_face_vector(
-            "./ImageDatabase/f_{}_{:02}.JPG".format(person_no + 1, sample_no + 1),
-            image_size
-        )
+        path = "./ImageDatabase/f_{}_{:02}.JPG".format(person_no + 1, sample_no + 1)
+        print("Loading \"{}\" ...".format(path))
+        image = cv2.imread(filename=path, flags=0)
+        face_vector = load_face_vector(image, image_size)
         face_vectors[nums] = face_vector
     return face_vectors
 
@@ -212,21 +282,12 @@ def load_face_vectors_from_disk(image_numbers, image_size):
 faceCascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
 
 
-def load_face_vector(path, image_size):
-    """
-    Loads image file from path supplied, extracts a face from it, resizes it to 'image_size', turns it into grayscale
-    and then into a float vector.
-
-    :param path: path of the image
-    :param image_size: target size of the image before turning it to a vector.
-    """
-    print("Loading \"{}\" ...".format(path))
-    image = cv2.imread(filename=path, flags=0)
+def load_face_vector(image, image_size):
     faces = faceCascade.detectMultiScale(
         image,
         scaleFactor=1.1,
         minNeighbors=5,
-        minSize=(500, 500)
+        minSize=(image.shape[1]//10, image.shape[0]//10)
     )
 
     copy = image.copy()
@@ -235,7 +296,7 @@ def load_face_vector(path, image_size):
         x, y, w, h = faces[0]
         cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 255), 40)
     else:
-        raise Exception("Face detection failed")
+        raise UserWarning("Face detection failed")
 
     cropped = copy[y:y + h, x:x + w]
     resized = cv2.resize(cropped, image_size)
@@ -247,6 +308,7 @@ def load_face_vector(path, image_size):
     vector = vector.astype(numpy.float64, copy=False) / 255
 
     return vector
+
 
 
 if __name__ == '__main__':
