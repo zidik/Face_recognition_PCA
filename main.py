@@ -40,7 +40,7 @@ def main():
         if function == "1":
             test_different_training(all_face_vectors, no_of_persons, samples_person)
         elif function == "2":
-            test_different_number_of_PCs(all_face_vectors, no_of_persons, samples_person, 3)
+            test_different_number_of_principal_components(all_face_vectors, no_of_persons, samples_person, 3)
         elif function == "3":
             test_live(all_face_vectors, all_image_numbers, samples_person)
         elif function == "4":
@@ -70,8 +70,8 @@ def test_different_training(all_face_vectors, no_of_persons, samples_person):
     plot_results(plot_number_of_training_samples, plot_recognition_rate, 1, samples_person - 1)
 
 
-def test_different_number_of_PCs(all_face_vectors, no_of_persons, samples_person, samples_training):
-    plot_number_of_PCs = []
+def test_different_number_of_principal_components(all_face_vectors, no_of_persons, samples_person, samples_training):
+    plot_number_of_principal_components = []
     plot_recognition_rate = []
     number_of_tests = 30
     for test_no in range(number_of_tests):
@@ -81,12 +81,13 @@ def test_different_number_of_PCs(all_face_vectors, no_of_persons, samples_person
             result = train_and_test(all_face_vectors, no_of_persons, samples_person, samples_training, number_of_PCs)
             # print("Principal components:{} result:{}".format(number_of_PCs, result))
 
-            plot_number_of_PCs.append(number_of_PCs)
+            plot_number_of_principal_components.append(number_of_PCs)
             plot_recognition_rate.append(result)
     print()
 
     # Plot results:
-    plot_results(plot_number_of_PCs, plot_recognition_rate, 1, samples_person - 1)
+    plot_results(plot_number_of_principal_components, plot_recognition_rate, 1, samples_person - 1)
+
 
 def test_live(all_face_vectors, all_image_numbers, samples_person):
     # Load training faces:
@@ -142,6 +143,7 @@ def test_one(training_results, image, samples_person):
     sample_no = closest_target_no % samples_person
     return person_no, sample_no
 
+
 def display_match(all_face_vectors, person_no, sample_no):
     match = all_face_vectors[(person_no, sample_no)].copy()
     match.shape = image_size
@@ -153,7 +155,7 @@ def plot_results(x_axis, y_axis, x_min, x_max):
     fig, ax = plt.subplots()
     ax.plot(x_axis, y_axis, 'ro', alpha=0.3, label='Datapoints')
 
-    #Plot mean
+    # Plot mean
     plot_mean_y = []
     for group_no in range(x_max - x_min + 1):
         group = y_axis[group_no::x_max - x_min + 1]
@@ -167,25 +169,24 @@ def plot_results(x_axis, y_axis, x_min, x_max):
 
 
 def train(train_faces, principal_components=None):
-    #Calculate the average face
+    # Calculate the average face
     train_average_face = train_faces.mean(axis=0)
     #Calculate Eigenvectors
-    T = train_faces - train_average_face
-    S = numpy.dot(T, T.transpose())
-    eig_values, eig_vectors = numpy.linalg.eig(S)
-    eig_vectors = numpy.dot(eig_vectors, T)
+    train_diff = train_faces - train_average_face
+    eig_values, eig_vectors = numpy.linalg.eig(numpy.dot(train_diff, train_diff.transpose()))
+    eig_vectors = numpy.dot(eig_vectors, train_diff)
 
     if principal_components is not None:
         # Sort eigenvectors and eigenvalues by eigenvalues
         idx = numpy.argsort(-eig_values)
-        eig_values = eig_values[idx]
+        #eig_values = eig_values[idx]
         eig_vectors = eig_vectors[idx]
         #Take only top "principal_components" of eigenvectors
-        eig_values = eig_values[:principal_components]
+        #eig_values = eig_values[:principal_components]
         eig_vectors = eig_vectors[:principal_components]
 
     #Calculate weights for each image
-    train_weights = numpy.dot(eig_vectors, T.T).T
+    train_weights = numpy.dot(eig_vectors, train_diff.T).T
 
     return train_average_face, eig_vectors, train_weights
 
@@ -197,7 +198,7 @@ def train_and_test(all_face_vectors, no_of_persons, samples_person, samples_trai
 
     train_average_face, eig_vectors, train_weights = train(train_faces, principal_components)
 
-    #Load images for testing
+    # Load images for testing
     test_faces = choose_face_vectors(all_face_vectors, test_img_no)
     test_diff = test_faces - train_average_face
     test_weights = numpy.dot(eig_vectors, test_diff.T).T
@@ -260,12 +261,12 @@ def randomly_assign_images(no_of_persons, samples_person, samples_training):
     return training_image_numbers, testing_image_numbers
 
 
-def load_face_vectors_from_disk(image_numbers, image_size):
+def load_face_vectors_from_disk(image_numbers, img_size):
     """
     Loads face vectors from disk and places them in the dictionary
 
     :param image_numbers:
-    :param image_size:
+    :param img_size:
     :return: dictionary of face vectors
     """
     face_vectors = {}
@@ -274,7 +275,7 @@ def load_face_vectors_from_disk(image_numbers, image_size):
         path = "./ImageDatabase/f_{}_{:02}.JPG".format(person_no + 1, sample_no + 1)
         print("Loading \"{}\" ...".format(path))
         image = cv2.imread(filename=path, flags=0)
-        face_vector = load_face_vector(image, image_size)
+        face_vector = load_face_vector(image, img_size)
         face_vectors[nums] = face_vector
     return face_vectors
 
@@ -282,12 +283,12 @@ def load_face_vectors_from_disk(image_numbers, image_size):
 faceCascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
 
 
-def load_face_vector(image, image_size):
+def load_face_vector(image, img_size):
     faces = faceCascade.detectMultiScale(
         image,
         scaleFactor=1.1,
         minNeighbors=5,
-        minSize=(image.shape[1]//10, image.shape[0]//10)
+        minSize=(image.shape[1] // 10, image.shape[0] // 10)
     )
 
     copy = image.copy()
@@ -299,7 +300,7 @@ def load_face_vector(image, image_size):
         raise UserWarning("Face detection failed")
 
     cropped = copy[y:y + h, x:x + w]
-    resized = cv2.resize(cropped, image_size)
+    resized = cv2.resize(cropped, img_size)
     vector = numpy.ravel(resized)
 
     cv2.imshow('cropped image', cropped)
@@ -310,25 +311,5 @@ def load_face_vector(image, image_size):
     return vector
 
 
-
 if __name__ == '__main__':
     main()
-
-"""
-        answer = None
-    while answer is None:
-        answer = input("Load cached eigenvectors and values? [Y/n]")
-        if answer == "n" or answer == "N":
-            print("Caching eigenvalues and eigenvectors...")
-            numpy.save("CachedAverageFace.npy", train_average_face)
-            numpy.save("CachedEigenValues.npy", eig_values)
-            numpy.save("CachedEigenVectors.npy", eig_vectors)
-        elif answer == "y" or answer == "Y" or answer == "":
-            print("Loading cached eigenvalues and eigenvectors...")
-            train_average_face = numpy.load("CachedAverageFace.npy")
-            eig_values = numpy.load("CachedEigenValues.npy")
-            eig_vectors = numpy.load("CachedEigenVectors.npy")
-        else:
-            answer = None
-    """
-
