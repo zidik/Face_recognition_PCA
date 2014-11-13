@@ -52,12 +52,13 @@ def main():
 def test_different_training(all_face_vectors, no_of_persons, samples_person):
     plot_number_of_training_samples = []
     plot_recognition_rate = []
-
+    x_min = 1
+    x_max = samples_person-1
     number_of_tests = 30
     for test_no in range(number_of_tests):
         sys.stdout.write("\r%d%%" % (test_no * 100 // number_of_tests))
         sys.stdout.flush()
-        for samples_training in range(1, samples_person):
+        for samples_training in range(x_min, x_max+1):
             result = train_and_test(all_face_vectors, no_of_persons, samples_person, samples_training)
             # print("Training samples:{} result:{}".format(samples_training, result))
 
@@ -67,17 +68,24 @@ def test_different_training(all_face_vectors, no_of_persons, samples_person):
     print()
 
     # Plot results:
-    plot_results(plot_number_of_training_samples, plot_recognition_rate, 1, samples_person - 1)
+    plot_results(
+        x_axis=plot_number_of_training_samples,
+        y_axis=plot_recognition_rate,
+        x_min=x_min,
+        x_max=x_max
+    )
 
 
 def test_different_number_of_principal_components(all_face_vectors, no_of_persons, samples_person, samples_training):
     plot_number_of_principal_components = []
     plot_recognition_rate = []
-    number_of_tests = 30
+    number_of_tests = 10
+    x_min = 1
+    x_max = no_of_persons*samples_person
     for test_no in range(number_of_tests):
         sys.stdout.write("\r%d%%" % (test_no * 100 // number_of_tests))
         sys.stdout.flush()
-        for number_of_PCs in range(1, samples_person):
+        for number_of_PCs in range(x_min, x_max+1):
             result = train_and_test(all_face_vectors, no_of_persons, samples_person, samples_training, number_of_PCs)
             # print("Principal components:{} result:{}".format(number_of_PCs, result))
 
@@ -86,7 +94,12 @@ def test_different_number_of_principal_components(all_face_vectors, no_of_person
     print()
 
     # Plot results:
-    plot_results(plot_number_of_principal_components, plot_recognition_rate, 1, samples_person - 1)
+    plot_results(
+        x_axis=plot_number_of_principal_components,
+        y_axis=plot_recognition_rate,
+        x_min=x_min,
+        x_max=x_max
+    )
 
 
 def test_live(all_face_vectors, all_image_numbers, samples_person):
